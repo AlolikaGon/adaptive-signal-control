@@ -12,6 +12,9 @@ from adasco.cluster import Cluster, ClusterSequence
 
 logger = logging.getLogger(__name__)
 
+#number of lanes per edge
+
+count_lanes={"-11685533#0": "2", "-11685533#1": "2", "-11694197#0": "1", "-11728100#0": "1", "-11743058#0": "1", "-11960612#0": "1", "-124139640#0": "1", "-124146853#0": "1", "-126233175#2": "1", "-25626142": "2", "-299800402#0": "2", "-315355614#0": "2", "-315355615#1": "1", "-320948884#0": "2", "-322361922#0": "2", "-322361922#1": "2", "-322361922#3": "2", "-375884812#0": "1", "-54460235#0": "2", "-54460235#4": "2", "-54500409#4": "2", "-54500409#5": "2", "-625851637": "2", "11685533#0": "2", "11685533#1": "2", "11685997#0": "2", "11694197#0": "1", "11728100#0": "1", "11743058#0": "1", "11960612#0": "1", "124139640#0": "2", "124146853#0": "1", "124147486": "1", "126233175#2": "1", "25626142": "2", "299800402#0": "2", "315355614#0": "2", "315355615#1": "1", "320948884#0": "2", "322361922#0": "2", "322361922#1": "2", "322361922#3": "2", "375884812#0": "1", "54460235#0": "2", "54460235#4": "2", "54500409#4": "2", "54500409#5": "2", "625851637": "2"}
 
 class ExactPreprocessor(object):
     def __init__(self,
@@ -28,12 +31,13 @@ class ExactPreprocessor(object):
         self.min_cluster_size = min_cluster_size
         self.merging_threshold = merging_threshold
 
-    def get_queue_cluster(self, queue_length):
+    def get_queue_cluster(self, queue_length, number_lanes):
         if queue_length == 0:
             return None
         count = queue_length
         arrival = 0
-        duration = count / self.saturation_flow_rate
+        #duration = count / self.saturation_flow_rate
+        duration = count / (self.saturation_flow_rate/2*number_lanes)
         departure = self.round_to_delta(arrival + duration)
         queue_cluster = Cluster(count=count,
                                 arrival=arrival,
@@ -66,8 +70,8 @@ class ExactPreprocessor(object):
                                              departure=(bucket+1)*self.sampling_interval))
         return arriving_clusters
 
-    def cluster_sensor_data(self, queue_length, vehicle_positions):
-        queue_cluster = self.get_queue_cluster(queue_length)
+    def cluster_sensor_data(self, queue_length, vehicle_positions, number_lanes):
+        queue_cluster = self.get_queue_cluster(queue_length, number_lanes)
         arrival_times = self.get_arrival_times(vehicle_positions)
         arriving_clusters = self.get_arriving_clusters(arrival_times)
         return queue_cluster, arriving_clusters
@@ -76,8 +80,9 @@ class ExactPreprocessor(object):
         roadflow = {}
 
         for edge, data in sensor_data.items():
+            #print("\n edge "+edge)
             queue_cluster, arriving_clusters = self.cluster_sensor_data(data.queue_length,
-                                                    data.arriving_vehicle_positions)
+                                                    data.arriving_vehicle_positions, int(count_lanes[edge]))
             # TODO(srishtid): Keep queue cluster for anticipated queue cluster
             if queue_cluster:
                 arriving_clusters.insort(queue_cluster, merge=True)
@@ -132,7 +137,7 @@ class ExactPreprocessor(object):
         return inflow
 
     # TODO: Create vehicle objects before this function is called
-    def get_queued_clusters_from_positions(self, vehicle_positions, outgoing_edges, IDs):
+    def get_queued_clusters_from_positions(self, vehicle_positions, outgoing_edges, IDs, number_lanes):
 
         arrival_times = self.get_arrival_times(vehicle_positions)
 
@@ -141,7 +146,8 @@ class ExactPreprocessor(object):
 
         queue_length = len(arrival_times)
         queue_arrival = 0
-        queue_duration = queue_length / self.saturation_flow_rate
+        #queue_duration = queue_length / self.saturation_flow_rate
+        queue_duration = queue_length / (self.saturation_flow_rate/2*number_lanes)
         queue_departure = self.round_to_delta(queue_arrival + queue_duration)
         queue_cluster = Cluster(count=queue_length,
                                 arrival=queue_arrival,
@@ -210,7 +216,7 @@ class ExactPreprocessor(object):
     def pick_sample_for_edge(self, edgeID, data, samples, index, phases):
 
         sample = Sample(phases)
-
+        #print("\nedge id"+str(edgeID))
         vehicle_info_by_phase = {}
         for vehID, position in zip(data.queued_vehicle_ids, data.queued_vehicle_positions):
             sampled_turn = samples[vehID][edgeID][index]
@@ -227,9 +233,10 @@ class ExactPreprocessor(object):
             vehicle_info_by_phase[sampled_phase]['IDs'].append(vehID)
 
         for phase, vehicle_info in vehicle_info_by_phase.items():
+            #print("\nvehicle info "+str(vehicle_info))
             queued_clusters, queued_cluster_info = self.get_queued_clusters_from_positions(vehicle_info['distances'],
                                                                                            vehicle_info['outgoing_edges'],
-                                                                                           vehicle_info['IDs'])
+                                                                                           vehicle_info['IDs'], int(count_lanes[edgeID]))
             sample.add(phase, queued_clusters, queued_cluster_info)
         
         vehicle_info_by_phase = {}
